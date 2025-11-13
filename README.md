@@ -1,4 +1,4 @@
-## PyROOT Multi-histogram plotting assistant
+# PyROOT Multi-histogram plotting assistant
 
 This work introduces a code, EventsFillerClass.py, that can take multiple TH1D histograms as an input, classify backgrounds from signals, stack background histograms and show signals invidudally. 
 
