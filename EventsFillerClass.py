@@ -1,8 +1,34 @@
-## Helpful functions from the toolbox
-from console import proc_title, msg, err_msg
-import console as con
 import ROOT
 import gc, os
+import numpy as np
+
+
+from rich.console import Console
+console = Console()
+
+def title(string = "", print = True):
+    if print:
+        console.print("\n######",string, "######\n", style="green")
+    else:
+        pass
+
+def proc_title(string = "", print = True):
+    if print:
+        console.print(">>>>", string, "<<<<", style="blue")
+    else:
+        pass
+
+def msg(string = "", print = True):
+    if print:
+        console.print("[INFO]", string, style="white")
+    else:
+        pass    
+    
+def err_msg(string = "", print = True):
+    if print:
+        console.print("[WARN]", string, style="red")
+    else:
+        pass
 
 
 ## Main Class
@@ -11,7 +37,7 @@ class PlottingAssistant:
     def __init__(self, 
                  x_title : str = "",
                  units : str = "",
-                 y_title : str = "",
+                 y_title : str = "Events",
                  n_bins : int = 25,
                  x_range : list = None
                 ):
@@ -20,11 +46,14 @@ class PlottingAssistant:
         ROOT.gROOT.SetStyle("ATLAS")
         ROOT.gROOT.SetBatch(True) 
         ROOT.gStyle.SetOptStat(0)
+        ROOT.gStyle.SetHatchesSpacing(1)
+        ROOT.gStyle.SetHatchesLineWidth(2)
         ROOT.TGaxis.SetMaxDigits(4)
 
         # Intial colors setting
-        # ROOT.gStyle.SetPalette(ROOT.kDeepSea)
-        self.auto_chose_colors_ = False
+        ROOT.gStyle.SetPalette(ROOT.kBird) # kBird / kViridis
+        ROOT.gStyle.SetNumberContours(15)
+        self.auto_chose_colors_ = True
 
         # histogram titles 
         if not (len(x_range) == 2 and (x_range[0] > x_range[1])):
@@ -43,7 +72,7 @@ class PlottingAssistant:
         self.bin_width = round((self.x_max -self.x_min)/self.n_bins, 1)
         self.y_title = f"{y_title} / {self.bin_width} {self.units}"
         self._show_hist_analysis = False
-        self.verbose_mode = True
+        self.verbose_mode = False
 
         # class
         self.histograms = []
@@ -51,10 +80,9 @@ class PlottingAssistant:
         self.stacked_histograms = []
         self.y_log = False
         self.y_peak = 0
-        self.num_of_legends = 0
         self.read_histograms_from_root = False
         unique = str(id(self))
-        con.title(f"Plotting Assisting Activated [Unique ID: {unique}].", print = self.verbose_mode)
+        title(f"Plotting Assisting Activated [Unique ID: {unique}].", print = self.verbose_mode)
         msg(f"X Tile: '{self.x_title}'", print = self.verbose_mode)
         msg(f"Y Title: '{self.y_title}'", print = self.verbose_mode)
         msg(f"Range of all histogram = [{self.x_min}, {self.x_max}] {self.units}, with {self.n_bins} bins.\n", print = self.verbose_mode)
@@ -65,13 +93,26 @@ class PlottingAssistant:
             f"Canvas_{unique}"
         )
         self.canvas.SetCanvasSize(800, 600)
+        self.save_formats = ["pdf"]
 
         # Initial Legends Settings
-        self.legend = ROOT.TLegend(0.63, 0.60, 0.92, 0.90)
-        self.legend.SetName(f"legend_{unique}")
-        self.legend.SetBorderSize(0)
-        self.legend.SetFillStyle(0)
-        self.legend.SetTextSize(0.025)
+        self.legend_bkg = ROOT.TLegend(0.60, 0.65, 0.95, 0.90)
+        self.legend_bkg.SetName(f"legend_sig_{unique}")
+        self.legend_bkg.SetNColumns(2)
+        self.legend_bkg.SetBorderSize(0)
+        self.legend_bkg.SetFillStyle(0)
+        self.legend_bkg.SetTextSize(0.035)
+        self.num_of_legends_bkg = 0
+        self.bkg_histograms_legends = []
+
+        self.legend_sig = ROOT.TLegend(0.60, 0.55, 0.90, 0.65)
+        self.legend_sig.SetName(f"legend_sig_{unique}")
+        self.legend_sig.SetNColumns(1)
+        self.legend_sig.SetBorderSize(0)
+        self.legend_sig.SetFillStyle(0)
+        self.legend_sig.SetTextSize(0.034)
+        self.num_of_legends_sig = 0
+        self.sig_histograms_legends = []
 
         # Inital Stacked Histograms settings
         # Only used if is_background = True
@@ -119,7 +160,7 @@ class PlottingAssistant:
 
     def set_legend_ncols(self,n) -> None:
         try:
-            self.legend.SetNColumns(n)
+            self.legend_sig.SetNColumns(n)
             msg(f"Legend number of columns was set to {n}", print = self.verbose_mode)
         except Exception as e:
             err_msg(f"Could not set legend NColumns (={n}) due to the error {e}")
@@ -127,11 +168,11 @@ class PlottingAssistant:
     def set_legend_position(self, x1 = 0.63, y1 = 0.60, x2 = 0.92, y2 = 0.90, text_size = 0.025) -> None:
 
         try:
-            self.legend.SetX1(x1)  # Left coordinate
-            self.legend.SetY1(y1)  # Bottom coordinate  
-            self.legend.SetX2(x2)  # Right coordinate
-            self.legend.SetY2(y2)  # Top coordinate
-            self.legend.SetTextSize(text_size)
+            self.legend_sig.SetX1(x1)  # Left coordinate
+            self.legend_sig.SetY1(y1)  # Bottom coordinate  
+            self.legend_sig.SetX2(x2)  # Right coordinate
+            self.legend_sig.SetY2(y2)  # Top coordinate
+            self.legend_sig.SetTextSize(text_size)
             msg("Legend positon and size set successfully.", print = self.verbose_mode)
         except Exception as e:
             err_msg(f"Could not set the legend position due to the error {e}")
@@ -224,6 +265,21 @@ class PlottingAssistant:
                 
                 # calculate total stacked histograms height
                 self.stacked_histograms_height += hist_height
+
+                # directly add the legend
+                if show_legend == True:
+                    try:
+                        # self.legend_bkg.AddEntry(hist, legend_name, "f")
+
+                        self.bkg_histograms_legends.append({
+                            "hist" : hist,
+                            "legend" : legend_name
+                        })
+
+                        self.num_of_legends_bkg += 1
+                        msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
+                    except Exception as e:
+                        err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
                 
             except Exception as e:
                 err_msg(f"Could not append the histogram. Returning the error: {e}")
@@ -234,17 +290,32 @@ class PlottingAssistant:
                 msg(f"This histogram was deticated for a '{_type}' process.", print = self.verbose_mode)
             except Exception as e:
                 err_msg(f"Could not append the histogram. Returning the error: {e}")
+            
+            # directly add the legend
+            if show_legend == True:
+                try:
+                    self.legend_sig.AddEntry(hist, legend_name, "l")
+
+                    # self.sig_histograms_legends.append({
+                    #         hist : legend_name
+                    # })
+                    
+                    self.num_of_legends_sig += 1
+                    msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
+                except Exception as e:
+                    err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
         
-        # "Auto" fill the legends
-        if show_legend == True:
-            try:
-                show_option = "f" if is_background == True else "l"
-                self.legend.AddEntry(hist, legend_name, show_option)
-                self.num_of_legends += 1
-                msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
-                msg(f"Legend drawing option = '{show_option}'", print = self.verbose_mode)
-            except Exception as e:
-                err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
+        # # "Auto" fill the legends
+        # # Can be used if you want to inlucde a third legend
+        # if show_legend == True:
+        #     try:
+        #         show_option = "f" if is_background == True else "l"
+        #         self.legend.AddEntry(hist, legend_name, show_option)
+        #         self.num_of_legends += 1
+        #         msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
+        #         msg(f"Legend drawing option = '{show_option}'", print = self.verbose_mode)
+        #     except Exception as e:
+        #         err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
         
         ## Getting maximum
         msg(f"Highest point of this histogram: {hist_height} (events)", print = self.verbose_mode)
@@ -319,13 +390,93 @@ class PlottingAssistant:
                 err_msg(f"Could not save the stacked histogram in '{root_file_name}' due to the Error: {e}.")
 
         root_file.Close()
-            
-    def draw_plot(self, plot_name, formats = ["pdf", "tex"]) -> None:
+        
+    def make_bkg_total_with_uncertainty(self, per_proc_sys_fracs=None, lumi_frac=0.0, shape_variations=None):
+        """
+        per_proc_sys_fracs: list of arrays (length nbins) — fractional uncorrelated sys per process
+        shape_variations: list of tuples per process [(h_up, h_down), ...] or None
+        lumi_frac: scalar fractional correlated normalization uncertainty
+        Returns: (bkg_total_TH1, bkg_total_TGraphErrors)
+        """
+        nbins = self.stacked_histograms[0].GetNbinsX()
+        # 1) build nominal total
+        bkg_total = self.stacked_histograms[0].Clone("bkg_total")
+        for h in self.stacked_histograms[1:]:
+            bkg_total.Add(h)
+
+        # Ensure Sumw2 present
+        bkg_total.Sumw2()
+
+        # 2) start covariance (diagonal) with statistical variances:
+        cov_diag = [bkg_total.GetBinError(i+1)**2 for i in range(nbins)]
+
+        # 3) uncorrelated per-process fractional sys
+        if per_proc_sys_fracs:
+            for p_h, p_frac in zip(self.stacked_histograms, per_proc_sys_fracs):
+                for i in range(1, nbins+1):
+                    Ni = p_h.GetBinContent(i)
+                    cov_diag[i-1] += (p_frac[i-1] * Ni)**2
+
+        # 4) shape variations (up/down): add in quadrature (uncorrelated across processes)
+        if shape_variations:
+            for (h_up, h_down), p_h in zip(shape_variations, self.stacked_histograms):
+                for i in range(1, nbins+1):
+                    nom = p_h.GetBinContent(i)
+                    d_up = h_up.GetBinContent(i) - nom
+                    d_down = nom - h_down.GetBinContent(i)
+                    delta = max(abs(d_up), abs(d_down))  # envelope; choose method you prefer
+                    cov_diag[i-1] += delta*delta
+
+        # 5) correlated lumi
+        if lumi_frac and lumi_frac > 0:
+            for i in range(1, nbins+1):
+                tot = bkg_total.GetBinContent(i)
+                cov_diag[i-1] += (lumi_frac * tot)**2
+
+        # 6) set bin errors in the TH1D object
+        for i in range(1, nbins+1):
+            bkg_total.SetBinError(i, (cov_diag[i-1])**0.5)
+        
+        # 7) Create the TGraphErrors object for the error band
+        x_values = []
+        y_values = []
+        x_errors = [] # Half bin width for the horizontal uncertainty
+        y_errors = [] # Calculated total uncertainty
+        
+        for i in range(1, nbins + 1):
+            x_values.append(bkg_total.GetBinCenter(i))
+            y_values.append(bkg_total.GetBinContent(i))
+            x_errors.append(bkg_total.GetBinWidth(i) / 2.0)
+            y_errors.append(bkg_total.GetBinError(i))
+
+        # Convert lists to C-type arrays required by TGraphErrors constructor
+        from array import array
+        ax = array('d', x_values)
+        ay = array('d', y_values)
+        aex = array('d', x_errors)
+        aey = array('d', y_errors)
+
+        # Create the TGraphErrors
+        bkg_gr_errors = ROOT.TGraphErrors(nbins, ax, ay, aex, aey)
+        bkg_gr_errors.SetName("bkg_total_errors")
+        bkg_gr_errors.SetTitle("Background Total with Uncertainty")
+
+        # 8) Set style for the TGraphErrors so it can be drawn directly
+        # E2 option with TGraphErrors draws a shaded area for the error bars only
+        bkg_gr_errors.SetFillStyle(3004) # Hatched style
+        bkg_gr_errors.SetFillColor(ROOT.kBlack)
+        bkg_gr_errors.SetMarkerStyle(0) # No markers
+        bkg_gr_errors.SetLineWidth(2)
+        bkg_gr_errors.SetLineColor(ROOT.kBlack) # Line color for the top/bottom edges of the band
+
+        return bkg_total, bkg_gr_errors
+
+    def draw_plot(self, plot_name) -> None:
 
         proc_title("Drawing The Plot", print = self.verbose_mode)
 
         # setting good y-max:
-        y_max = self.y_peak * 1e4 if self.y_log else self.y_peak * 2
+        y_max = self.y_peak * 1e5 if self.y_log else self.y_peak * 3
         y_min = 5e-1 if self.y_log else 0
 
         def x_div(hist):
@@ -341,8 +492,13 @@ class PlottingAssistant:
             # if use this option remove self.stack.Add(hist) from append_histogram() function
             if self._stack_in_order:
                 try:
+
                     for hist in sorted(self.stacked_histograms, key=lambda h: h.Integral()):
                         self.stack.Add(hist)
+                    
+                    for item in sorted(self.bkg_histograms_legends, key=lambda item: item["hist"].Integral(), reverse =  True):
+                        self.legend_bkg.AddEntry(item["hist"], item["legend"], "f")
+                        
                     msg("Background histograms stacked in order successfully.", print = self.verbose_mode)
                 except Exception as e:
                     err_msg(f"Could not stack the background histograms in order due to the error: {e}")
@@ -356,6 +512,16 @@ class PlottingAssistant:
 
                 x_div(self.stack)
                 msg(f"The stacted histogram was drawn successfully.", print = self.verbose_mode)
+
+                bkg_total, total_errors = self.make_bkg_total_with_uncertainty()
+                bkg_total.SetLineColor(ROOT.kBlack)
+                bkg_total.SetFillStyle(0)
+                bkg_total.SetLineWidth(1)
+                bkg_total.Draw("SAME HIST")
+                total_errors.Draw("SAME E2")
+                self.legend_bkg.AddEntry(total_errors, "Total SM", "fl")
+                self.canvas.Update()
+
             except Exception as e:
                 err_msg(f"The stacted histogram was not drawn due to the Error: {e}.")
                 
@@ -366,7 +532,7 @@ class PlottingAssistant:
                         hist.SetMinimum(y_min)
                         x_div(hist)
 
-                        req = "hist" + ("plc" if self.auto_chose_colors_ else "") + "same"
+                        req = "hist"  + "same"
                         hist.Draw(req)
                         msg(f"The histogram {hist.GetName()} was drawn successfully.", print = self.verbose_mode)
                     except Exception as e:
@@ -379,17 +545,24 @@ class PlottingAssistant:
                         hist.SetMinimum(y_min)
                         x_div(hist)
 
-                        req1 = "hist" + ("plc" if self.auto_chose_colors_ else "")
-                        req2 = "hist" + ("plc" if self.auto_chose_colors_ else "") + "same"
+                        req1 = "hist" 
+                        req2 = "hist" + "same"
                         hist.Draw(req1 if idx == 0 else req2)
                         msg(f"The histogram {hist.GetName()} was drawn successfully.", print = self.verbose_mode)
                     except Exception as e:
                         err_msg(f"The histogram {hist.GetName()} was not drawn due to the Error: {e}.")
 
-        if self.num_of_legends != 0:
+        if self.num_of_legends_bkg != 0:
             try:
-                self.legend.Draw("same")
-                msg(f"The legend box was drawn successfully.", print = self.verbose_mode)
+                self.legend_bkg.Draw("same")
+                msg(f"The backgrounds legend box was drawn successfully.", print = self.verbose_mode)
+            except Exception as e:
+                err_msg(f"The legend box was not drawn due to the Error: {e}.")
+        
+        if self.num_of_legends_sig != 0:
+            try:
+                self.legend_sig.Draw("same")
+                msg(f"The signal legend box was drawn successfully.", print = self.verbose_mode)
             except Exception as e:
                 err_msg(f"The legend box was not drawn due to the Error: {e}.")
 
@@ -413,9 +586,9 @@ class PlottingAssistant:
                 self.canvas.SaveAs(plot_name)
                 msg("Plot was saved in one format.", print = self.verbose_mode)
             else:
-                for format in formats:
+                for format in self.save_formats :
                     self.canvas.SaveAs(f"{plot_name}.{format}")
-                msg(f"Plot was saved in {len(formats)} format.", print = self.verbose_mode)
+                msg(f"Plot was saved in {len(self.save_formats)} format.", print = self.verbose_mode)
         except Exception as e:
             err_msg(f"Could not save the plot. Returning the error: {e}")
 
@@ -451,10 +624,16 @@ class PlottingAssistant:
             err_msg(f"The stacked histogram created by this class was not deleted successfully due to the error {e}.")
 
         try:
-            self.legend.Delete()
-            msg("The legend created by this class was deleted.", print = self.verbose_mode)
+            self.legend_bkg.Delete()
+            msg("The lbackgroundegend created by this class was deleted.", print = self.verbose_mode)
         except Exception as e:
-            err_msg(f"The legend created by this class was not deleted successfully due to the error {e}.")
+            err_msg(f"The background legend created by this class was not deleted successfully due to the error {e}.")
+        
+        try:
+            self.legend_sig.Delete()
+            msg("The signal legend created by this class was deleted.", print = self.verbose_mode)
+        except Exception as e:
+            err_msg(f"The signal legend created by this class was not deleted successfully due to the error {e}.")
 
         try:
             self.canvas.Close()
@@ -487,8 +666,6 @@ if __name__ == '__main__':
         n_bins  = 25,
         x_range = [400,3000]
     )
-    plot.auto_chose_colors(True)
-    plot.stack_in_order(True)
 
     _list = ["t_Tree", "tt_Tree", "ttV_Tree", "WW_Tree", "WZ_Tree", "ZZ_Tree", "sig1000_Tree", "sig1200_Tree", "sig1400_Tree", "sig1600_Tree"]
 
