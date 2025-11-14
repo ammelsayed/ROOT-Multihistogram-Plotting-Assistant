@@ -706,7 +706,6 @@ if __name__ == '__main__':
     plot.set_logy(True)
     plot.save_histograms("file.root")
     plot.set_legend_position(0.67, 0.55, 0.95, 0.9, 0.035)
-    plot.add_label(y1 = 0.86, label="#scale[1.1]{#bf{#sqrt{s} = 13.6 TeV, 400 fb^{-1}}}")
     plot.add_label(y1 = 0.80, label="After Preselection")
     plot.draw_plot("HT.pdf")
     plot.clean_memory()
