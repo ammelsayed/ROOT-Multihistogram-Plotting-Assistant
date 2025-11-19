@@ -1,9 +1,18 @@
 
-## -------------------------------------------------------------- ##
-##    Author:    A.M.M Elsayed
-##    Email:     ahmedphysica@outlook.com
-##    Institute: University of Science and Technology of China
-## -------------------------------------------------------------- ##
+
+## -------------------------------------------------------------------------- ##
+##    Author:    A.M.M Elsayed                                                ##
+##    Email:     ahmedphysica@outlook.com                                     ##
+##    Institute: University of Science and Technology of China                ##
+## -------------------------------------------------------------------------- ##                        
+##    A powerful tool for working with TH1D objects,                          ##
+##    distinguishing backgrounds from signals, stacking                       ##
+##    background histograms, and visualizing signals                          ##
+##    individually in an automatic way.                                       ##
+##                                                                            ##
+##    Updates On:                                                             ##
+##    https://github.com/ammelsayed/ROOT-Multihistogram-Plotting-Assistant    ##
+## -------------------------------------------------------------------------- ##
 
 
 import ROOT
@@ -76,11 +85,11 @@ class PlottingAssistant:
         
         self.n_bins = n_bins
         self.units = units
-        self.x_title = f"{x_title} [{self.units}]"
+        self.x_title = f"{x_title} [{self.units}]" if self.units != "" else f"{x_title}"
         self.bin_width = round((self.x_max -self.x_min)/self.n_bins, 1)
-        self.y_title = f"{y_title} / {self.bin_width} {self.units}"
-        self._show_hist_analysis = False
-        self.verbose_mode = False
+        self.y_title = f"{y_title} / {self.bin_width} {self.units}" if self.units != "" else f"{y_title} / {self.bin_width}"
+        self._show_hist_analysis = True
+        self.verbose_mode = True
 
         # class
         self.histograms = []
@@ -139,17 +148,17 @@ class PlottingAssistant:
         self.label.SetNDC()
         self.labels = []
     
-    def disable_verbose_mode(self, disable : bool) -> None:
-        self.auto_chose_colors_ = disable
+    def disable_verbose_mode(self, option : bool) -> None:
+        self.verbose_mode = option
 
-    def show_hist_analysis(self, enable : bool) -> None:
-        self._show_hist_analysis = enable
+    def show_hist_analysis(self, option : bool) -> None:
+        self._show_hist_analysis = option
 
-    def auto_chose_colors(self, enable : bool) -> None:
-        self.auto_chose_colors_ = enable
+    def auto_chose_colors(self, option : bool) -> None:
+        self.auto_chose_colors_ = option
     
-    def stack_in_order(self, enable : bool) -> None:
-        self._stack_in_order = enable
+    def stack_in_order(self, option : bool) -> None:
+        self._stack_in_order = option
         
     def add_label(self, x1 = 0.20, y1 = 0.80, label = "", text_size = 0.045) -> None:
         self.labels.append({
@@ -658,56 +667,3 @@ class PlottingAssistant:
         # cross check
         gc.collect()
         
-        
-if __name__ == '__main__':
-
-    ## Example Usage
-
-    input_file_path = "/data/ammelsayed/Framework/test_sample.root"
-    
-    root_file = ROOT.TFile(input_file_path, "READ")
-
-    plot = PlottingAssistant(
-        y_title = "Events",
-        x_title = "HT",
-        units = "GeV",
-        n_bins  = 25,
-        x_range = [400,3000]
-    )
-
-    _list = ["t_Tree", "tt_Tree", "ttV_Tree", "WW_Tree", "WZ_Tree", "ZZ_Tree", "sig1000_Tree", "sig1200_Tree", "sig1400_Tree", "sig1600_Tree"]
-
-    for proc in _list:
-
-        tree = root_file.Get(proc)
-
-        hist = plot.book_histogram(
-            hist_name = f"uniqueName_{proc}"            
-        )
-
-        plot.design_histogram(
-            hist,
-            line_width = 0 if proc in ["sig1200_Tree", "sig1400_Tree", "sig1600_Tree"] else 2
-        )
-
-        #------------ FILLING -------------#
-        tree.GetBranch("HT")
-        tree.Draw(f"HT >> uniqueName_{proc}", "", "goff")
-        #------------ FILLING -------------#
-
-        plot.append_histogram(
-            hist,
-            is_background = False if proc.startswith('sig') else True,
-            is_signal = True if proc.startswith('sig') else False,
-            show_legend = True if proc not in ["sig1200_Tree", "sig1400_Tree", "sig1600_Tree"] else False,
-            legend_name = f"{proc}"
-        )
-
-    plot.set_logy(True)
-    plot.save_histograms("file.root")
-    plot.set_legend_position(0.67, 0.55, 0.95, 0.9, 0.035)
-    plot.add_label(y1 = 0.80, label="After Preselection")
-    plot.draw_plot("HT.pdf")
-    plot.clean_memory()
-
-    pass
