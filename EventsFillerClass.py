@@ -18,34 +18,43 @@
 import ROOT
 import gc, os
 import numpy as np
+from array import array
 
 
 from rich.console import Console
 console = Console()
 
-def title(string = "", print = True):
-    if print:
-        console.print("\n######",string, "######\n", style="green")
-    else:
-        pass
 
-def proc_title(string = "", print = True):
-    if print:
-        console.print(">>>>", string, "<<<<", style="blue")
-    else:
-        pass
+tag = "[PlottingAssistant]"
+class Log:
 
-def msg(string = "", print = True):
-    if print:
-        console.print("[INFO]", string, style="white")
-    else:
-        pass    
-    
-def err_msg(string = "", print = True):
-    if print:
-        console.print("[WARN]", string, style="red")
-    else:
-        pass
+    def __init__(self, print_option = True):
+        self.print_option = print_option
+        self.msges = []
+        self.err_msges = []
+
+    def title(self, string = ""):
+        if self.print_option:
+            console.print(f"{tag} ######", string, "######", style="green")
+        else:
+            pass
+
+    def proc_title(self, string = ""):
+        if self.print_option:
+            console.print(f"{tag} >>>>", string, "<<<<", style="blue")
+        else:
+            pass
+
+    def msg(self, string = ""):
+        if self.print_option:
+            console.print(tag, string, style="white")
+            self.msges.append(string)
+        else:
+            pass    
+        
+    def err_msg(self, string = ""):
+        console.print(f"{tag} [WARN]", string, style="red")
+        self.err_msges.append(string)
 
 
 ## Main Class
@@ -68,17 +77,20 @@ class PlottingAssistant:
         ROOT.TGaxis.SetMaxDigits(4)
 
         # Intial colors setting
-        ROOT.gStyle.SetPalette(ROOT.kBird) # kBird / kViridis
-        ROOT.gStyle.SetNumberContours(15)
+        ROOT.gStyle.SetPalette(ROOT.kBird) # kBird / kViridis/ kRainBow / kCubehelix
+        ROOT.gStyle.SetNumberContours(30)
         self.auto_chose_colors_ = True
 
+        # logs
+        self._show_hist_analysis = False
+        self.verbose_mode = True
+        self.log = Log(self.verbose_mode)
+
         # histogram titles 
-        if not (len(x_range) == 2 and (x_range[0] > x_range[1])):
-            self.x_range = x_range
-            self.x_min, self.x_max = self.x_range
-        else:
-            err_msg("'x_range' must be a list of two numbers, with X1 > X0")
-            raise TypeError(f"x_range must be a list of two numbers, with X1 > X0 {type(n_bins)}")
+        if not (isinstance(x_range, (list, tuple)) and len(x_range) == 2 and x_range[0] < x_range[1]):
+            raise TypeError("x_range must be a list or tuple [xmin, xmax] with xmin < xmax")
+        self.x_min, self.x_max = float(x_range[0]), float(x_range[1])
+        self.x_range = (self.x_min, self.x_max)
 
         if not isinstance(n_bins, int):
             raise TypeError(f"n_bins must be int, got {type(n_bins)}")
@@ -88,8 +100,6 @@ class PlottingAssistant:
         self.x_title = f"{x_title} [{self.units}]" if self.units != "" else f"{x_title}"
         self.bin_width = round((self.x_max -self.x_min)/self.n_bins, 1)
         self.y_title = f"{y_title} / {self.bin_width} {self.units}" if self.units != "" else f"{y_title} / {self.bin_width}"
-        self._show_hist_analysis = True
-        self.verbose_mode = True
 
         # class
         self.histograms = []
@@ -99,10 +109,10 @@ class PlottingAssistant:
         self.y_peak = 0
         self.read_histograms_from_root = False
         unique = str(id(self))
-        title(f"Plotting Assisting Activated [Unique ID: {unique}].", print = self.verbose_mode)
-        msg(f"X Tile: '{self.x_title}'", print = self.verbose_mode)
-        msg(f"Y Title: '{self.y_title}'", print = self.verbose_mode)
-        msg(f"Range of all histogram = [{self.x_min}, {self.x_max}] {self.units}, with {self.n_bins} bins.\n", print = self.verbose_mode)
+        self.log.title(f"Plotting Assisting Activated [Unique ID: {unique}].")
+        self.log.msg(f"X Tile: '{self.x_title}'")
+        self.log.msg(f"Y Title: '{self.y_title}'")
+        self.log.msg(f"Range of all histogram = [{self.x_min}, {self.x_max}] {self.units}, with {self.n_bins} bins.\n")
 
         # Initial Canvas Settings
         self.canvas = ROOT.TCanvas(
@@ -113,7 +123,7 @@ class PlottingAssistant:
         self.save_formats = ["pdf"]
 
         # Initial Legends Settings
-        self.legend_bkg = ROOT.TLegend(0.60, 0.65, 0.95, 0.90)
+        self.legend_bkg = ROOT.TLegend(0.58, 0.65, 0.95, 0.90)
         self.legend_bkg.SetName(f"legend_sig_{unique}")
         self.legend_bkg.SetNColumns(2)
         self.legend_bkg.SetBorderSize(0)
@@ -122,7 +132,7 @@ class PlottingAssistant:
         self.num_of_legends_bkg = 0
         self.bkg_histograms_legends = []
 
-        self.legend_sig = ROOT.TLegend(0.60, 0.55, 0.90, 0.65)
+        self.legend_sig = ROOT.TLegend(0.58, 0.55, 0.90, 0.65)
         self.legend_sig.SetName(f"legend_sig_{unique}")
         self.legend_sig.SetNColumns(1)
         self.legend_sig.SetBorderSize(0)
@@ -148,7 +158,7 @@ class PlottingAssistant:
         self.label.SetNDC()
         self.labels = []
     
-    def disable_verbose_mode(self, option : bool) -> None:
+    def set_verbose_mode(self, option : bool) -> None:
         self.verbose_mode = option
 
     def show_hist_analysis(self, option : bool) -> None:
@@ -171,16 +181,16 @@ class PlottingAssistant:
     def set_canvas_size(self, width, height) -> None:
         try:
             self.canvas.SetCanvasSize(width, height)
-            msg(f"Canvas size was set to {width} * {height}", print = self.verbose_mode)
+            self.log.msg(f"Canvas size was set to {width} * {height}")
         except Exception as e:
-            err_msg(f"Could not set canvas size to {width} * {height} due to the error {e}")
+            self.log.err_msg(f"Could not set canvas size to {width} * {height} due to the error {e}")
 
     def set_legend_ncols(self,n) -> None:
         try:
             self.legend_sig.SetNColumns(n)
-            msg(f"Legend number of columns was set to {n}", print = self.verbose_mode)
+            self.log.msg(f"Legend number of columns was set to {n}")
         except Exception as e:
-            err_msg(f"Could not set legend NColumns (={n}) due to the error {e}")
+            self.log.err_msg(f"Could not set legend NColumns (={n}) due to the error {e}")
 
     def set_legend_position(self, x1 = 0.63, y1 = 0.60, x2 = 0.92, y2 = 0.90, text_size = 0.025) -> None:
 
@@ -190,66 +200,58 @@ class PlottingAssistant:
             self.legend_sig.SetX2(x2)  # Right coordinate
             self.legend_sig.SetY2(y2)  # Top coordinate
             self.legend_sig.SetTextSize(text_size)
-            msg("Legend positon and size set successfully.", print = self.verbose_mode)
+            self.log.msg("Legend positon and size set successfully.")
         except Exception as e:
-            err_msg(f"Could not set the legend position due to the error {e}")
+            self.log.err_msg(f"Could not set the legend position due to the error {e}")
 
     def auto_place_legend(self, bool = False):
         """
         This part of code automatically study the amount of text in the legend and the best place to place the legend.
         """
         pass
+    
+    def sum_histograms(self, histograms: list = []) -> "ROOT.THID" :
+        """
+        Sums a list of TH1D histograms and returns a single TH1D summed histogram.
+        Assumes all histograms have the same binning.
+        """
+        if not histograms or len(histograms) == 0:
+            self.log.err_msg("No histograms provided to sum.")
+            return None
+
+        try:
+            # Use binning from the first histogram
+            first_hist = histograms[0]
+            n_bins  = first_hist.GetNbinsX()
+            x_min   = first_hist.GetXaxis().GetXmin()
+            x_max   = first_hist.GetXaxis().GetXmax()
+            summed_hist_name  = f"{first_hist.GetName()}_summed"
+            summed_hist_title = f"{summed_hist_name};{first_hist.GetXaxis().GetTitle()};{first_hist.GetYaxis().GetTitle()}"
+            summed_hist = ROOT.TH1D(summed_hist_name, summed_hist_title, n_bins, x_min, x_max)
+
+            # Sum all histograms (histograms can simply be added using Add)
+            for hist in histograms:
+                summed_hist.Add(hist)
+            
+            self.log.msg("Histograms summed successfully.")
+        
+        except Exception as e:
+            self.log.err_msg(f"Error while summing histograms: {e}")
+            return None
+
+        return summed_hist
 
     def book_histogram(self, hist_name = ""):
-        proc_title(f"Booking Histogram '{hist_name}'", print = self.verbose_mode)
+        self.log.proc_title(f"Booking Histogram '{hist_name}'")
         try:
             hist_title = f"hist_title; {self.x_title}; {self.y_title}"
             hist = ROOT.TH1D(hist_name, hist_title, self.n_bins, self.x_min, self.x_max)
-            msg(f"The histogram was booked successfully.", print = self.verbose_mode)
+            self.log.msg(f"The histogram was booked successfully.")
         except Exception as e:
-            err_msg(f"Could not book the histogram due to the error: {e}")
+            self.log.err_msg(f"Could not book the histogram due to the error: {e}")
 
         return hist
 
-    def analyze_histogram(self, hist) -> None:
-
-        """Complete analysis of a histogram"""
-        
-        nbins = self.n_bins
-              
-        # Underflow/Overflow
-        underflow = hist.GetBinContent(0)
-        underflow_error = hist.GetBinError(0)
-        overflow = hist.GetBinContent(nbins + 1)
-        overflow_error = hist.GetBinError(nbins + 1)
-        
-        msg("UNDERFLOW/OVERFLOW:")
-        msg(f"Underflow (bin 0): {underflow} ± {underflow_error}")
-        msg(f"Overflow (bin {nbins + 1}): {overflow} ± {overflow_error}")
-        
-        # Totals
-        total_entries = hist.GetEntries()
-        total_weighted = hist.Integral(0, nbins + 1)  # All bins including under/overflow
-        total_in_range = hist.Integral()  # Only regular bins
-        
-        msg("TOTALS:")
-        msg(f"Total entries: {total_entries}")
-        msg(f"Total weighted events (all bins): {total_weighted}")
-        msg(f"Total in range (regular bins only): {total_in_range}")
-        
-        # Detailed bin information
-        msg("DETAILED BIN INFORMATION:")
-        msg("Bin\tContent\t\tAbs. Error\tRel. Error (%)")
-        for i in range(1, nbins + 1):
-            content = hist.GetBinContent(i)
-            error = hist.GetBinError(i)
-            if content > 0:
-                relative_error = (error / content) * 100
-            else:
-                relative_error = 0
-        
-            msg(f"{i}\t{content:.6f}\t{error:.6f}\t{relative_error:.2f}%")
-    
     def append_histogram(self, hist,
         weight        = 1.0, 
         is_signal     = False,
@@ -270,15 +272,15 @@ class PlottingAssistant:
         if is_background == True:
             try:
                 self.stacked_histograms.append(hist)
-                msg(f"This histogram was deticated for a 'Background' process.", print = self.verbose_mode)
+                self.log.msg(f"This histogram was deticated for a 'Background' process.")
 
                 # Don't add to stack here when stack_in_order=True
                 if not self._stack_in_order:
                     self.stack.Add(hist)
-                    msg("The histogram was stacked successfully.", print = self.verbose_mode)
+                    self.log.msg("The histogram was stacked successfully.")
                 else:    
-                    err_msg(f"Background histogram queued for stacking.", print=self.verbose_mode)
-                    err_msg(f"Ordered stacking process will take place while plotting.", print=self.verbose_mode)
+                    self.log.err_msg(f"Background histogram queued for stacking.")
+                    self.log.err_msg(f"Ordered stacking process will take place while plotting.")
                 
                 # calculate total stacked histograms height
                 self.stacked_histograms_height += hist_height
@@ -294,19 +296,19 @@ class PlottingAssistant:
                         })
 
                         self.num_of_legends_bkg += 1
-                        msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
+                        self.log.msg(f"Legend of the historgam was add successfully.")
                     except Exception as e:
-                        err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
+                        self.log.err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
                 
             except Exception as e:
-                err_msg(f"Could not append the histogram. Returning the error: {e}")
+                self.log.err_msg(f"Could not append the histogram. Returning the error: {e}")
         else:
             try:
                 _type = "Signal" if is_signal == True else "Data"
                 self.single_histograms.append(hist)
-                msg(f"This histogram was deticated for a '{_type}' process.", print = self.verbose_mode)
+                self.log.msg(f"This histogram was deticated for a '{_type}' process.")
             except Exception as e:
-                err_msg(f"Could not append the histogram. Returning the error: {e}")
+                self.log.err_msg(f"Could not append the histogram. Returning the error: {e}")
             
             # directly add the legend
             if show_legend == True:
@@ -318,9 +320,9 @@ class PlottingAssistant:
                     # })
                     
                     self.num_of_legends_sig += 1
-                    msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
+                    self.log.msg(f"Legend of the historgam was add successfully.")
                 except Exception as e:
-                    err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
+                    self.log.err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
         
         # # "Auto" fill the legends
         # # Can be used if you want to inlucde a third legend
@@ -329,14 +331,14 @@ class PlottingAssistant:
         #         show_option = "f" if is_background == True else "l"
         #         self.legend.AddEntry(hist, legend_name, show_option)
         #         self.num_of_legends += 1
-        #         msg(f"Legend of the historgam was add successfully.", print = self.verbose_mode)
-        #         msg(f"Legend drawing option = '{show_option}'", print = self.verbose_mode)
+        #         self.log.msg(f"Legend of the historgam was add successfully.")
+        #         self.log.msg(f"Legend drawing option = '{show_option}'")
         #     except Exception as e:
-        #         err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
+        #         self.log.err_msg(f"Could not draw legend of the histogram. Returning the error: {e}")
         
         ## Getting maximum
-        msg(f"Highest point of this histogram: {hist_height} (events)", print = self.verbose_mode)
-        msg(f"Total highest point stacked histograms: {self.stacked_histograms_height} (events)", print = self.verbose_mode)  
+        self.log.msg(f"Highest point of this histogram: {hist_height} (events)")
+        self.log.msg(f"Total highest point stacked histograms: {self.stacked_histograms_height} (events)")  
         try:
             try:
                 y_peak_stack = self.stack.GetMaximum()
@@ -347,15 +349,56 @@ class PlottingAssistant:
             if y_peak > self.y_peak:
                 self.y_peak = y_peak
             
-            msg(f"Current highest peak among all appeneded histograms is {self.y_peak}.", print = self.verbose_mode)
+            self.log.msg(f"Current highest peak among all appeneded histograms is {self.y_peak}.")
         except Exception as e:
-            err_msg(f"Could not run y maxima calculations due to the error: {e}")
+            self.log.err_msg(f"Could not run y maxima calculations due to the error: {e}")
 
         ## Priniting out some data about the histogram
         if self._show_hist_analysis:
             self.analyze_histogram(hist)
 
         self.histograms.append(hist)
+    
+    
+    def analyze_histogram(self, hist) -> None:
+
+        """Complete analysis of a histogram"""
+        
+        nbins = self.n_bins
+              
+        # Underflow/Overflow
+        underflow = hist.GetBinContent(0)
+        underflow_error = hist.GetBinError(0)
+        overflow = hist.GetBinContent(nbins + 1)
+        overflow_error = hist.GetBinError(nbins + 1)
+        
+        self.log.msg("UNDERFLOW/OVERFLOW:")
+        self.log.msg(f"Underflow (bin 0): {underflow} ± {underflow_error}")
+        self.log.msg(f"Overflow (bin {nbins + 1}): {overflow} ± {overflow_error}")
+        
+        # Totals
+        total_entries = hist.GetEntries()
+        total_weighted = hist.Integral(0, nbins + 1)  # All bins including under/overflow
+        total_in_range = hist.Integral()  # Only regular bins
+        
+        self.log.msg("TOTALS:")
+        self.log.msg(f"Total entries: {total_entries}")
+        self.log.msg(f"Total weighted events (all bins): {total_weighted}")
+        self.log.msg(f"Total in range (regular bins only): {total_in_range}")
+        
+        # Detailed bin information
+        self.log.msg("DETAILED BIN INFORMATION:")
+        self.log.msg("Bin\tContent\t\tAbs. Error\tRel. Error (%)")
+        for i in range(1, nbins + 1):
+            content = hist.GetBinContent(i)
+            error = hist.GetBinError(i)
+            if content > 0:
+                relative_error = (error / content) * 100
+            else:
+                relative_error = 0
+        
+            self.log.msg(f"{i}\t{content:.6f}\t{error:.6f}\t{relative_error:.2f}%")
+    
     
     def fill_from_file(self, root_file_path) -> None:
         pass
@@ -380,7 +423,7 @@ class PlottingAssistant:
 
     def save_histograms(self, root_file_name) -> None:
 
-        proc_title("Saving The Histograms", print = self.verbose_mode)
+        self.log.proc_title("Saving The Histograms")
 
         root_file = ROOT.TFile(root_file_name, "RECREATE")
         if self.histograms != []:
@@ -388,9 +431,9 @@ class PlottingAssistant:
                 try:
                     name = hist.GetName()
                     hist.Write()
-                    msg(f"The histogram '{name}' was saved successfully in '{root_file_name}'.", print = self.verbose_mode)
+                    self.log.msg(f"The histogram '{name}' was saved successfully in '{root_file_name}'.")
                 except Exception as e:
-                    err_msg(f"The histogram '{name}' was not saved in '{root_file_name}' due to the Error: {e}.")
+                    self.log.err_msg(f"The histogram '{name}' was not saved in '{root_file_name}' due to the Error: {e}.")
 
         if self.stacked_histograms != []:
             bkg_total = None
@@ -404,7 +447,7 @@ class PlottingAssistant:
                 if bkg_total:
                     bkg_total.Write()
             except Exception as e:
-                err_msg(f"Could not save the stacked histogram in '{root_file_name}' due to the Error: {e}.")
+                self.log.err_msg(f"Could not save the stacked histogram in '{root_file_name}' due to the Error: {e}.")
 
         root_file.Close()
         
@@ -415,6 +458,9 @@ class PlottingAssistant:
         lumi_frac: scalar fractional correlated normalization uncertainty
         Returns: (bkg_total_TH1, bkg_total_TGraphErrors)
         """
+        if not self.stacked_histograms:
+            raise RuntimeError("No background histograms available to build total.")
+
         nbins = self.stacked_histograms[0].GetNbinsX()
         # 1) build nominal total
         bkg_total = self.stacked_histograms[0].Clone("bkg_total")
@@ -490,10 +536,14 @@ class PlottingAssistant:
 
     def draw_plot(self, plot_name) -> None:
 
-        proc_title("Drawing The Plot", print = self.verbose_mode)
+        self.log.proc_title("Drawing The Plot")
 
         # setting good y-max:
-        y_max = self.y_peak * 1e5 if self.y_log else self.y_peak * 3
+        if self.y_peak <= 0:
+            y_max = 1.0 if not self.y_log else 10.0
+        else:
+            y_max = self.y_peak * (1e5 if self.y_log else 3)
+
         y_min = 5e-1 if self.y_log else 0
 
         def x_div(hist):
@@ -516,19 +566,19 @@ class PlottingAssistant:
                     for item in sorted(self.bkg_histograms_legends, key=lambda item: item["hist"].Integral(), reverse =  True):
                         self.legend_bkg.AddEntry(item["hist"], item["legend"], "f")
                         
-                    msg("Background histograms stacked in order successfully.", print = self.verbose_mode)
+                    self.log.msg("Background histograms stacked in order successfully.")
                 except Exception as e:
-                    err_msg(f"Could not stack the background histograms in order due to the error: {e}")
+                    self.log.err_msg(f"Could not stack the background histograms in order due to the error: {e}")
 
             try:
                 self.stack.SetMaximum(y_max)
                 self.stack.SetMinimum(y_min)
 
-                req = "hist" + ("pfc plc" if self.auto_chose_colors_ else "")
+                req = "hist" + (" pfc plc" if self.auto_chose_colors_ else "")
                 self.stack.Draw(req)
 
                 x_div(self.stack)
-                msg(f"The stacted histogram was drawn successfully.", print = self.verbose_mode)
+                self.log.msg(f"The stacted histogram was drawn successfully.")
 
                 bkg_total, total_errors = self.make_bkg_total_with_uncertainty()
                 bkg_total.SetLineColor(ROOT.kBlack)
@@ -540,7 +590,7 @@ class PlottingAssistant:
                 self.canvas.Update()
 
             except Exception as e:
-                err_msg(f"The stacted histogram was not drawn due to the Error: {e}.")
+                self.log.err_msg(f"The stacted histogram was not drawn due to the Error: {e}.")
                 
             if self.single_histograms != []:
                 for hist in self.single_histograms:
@@ -549,11 +599,11 @@ class PlottingAssistant:
                         hist.SetMinimum(y_min)
                         x_div(hist)
 
-                        req = "hist"  + "same"
+                        req = "hist"  + " same"
                         hist.Draw(req)
-                        msg(f"The histogram {hist.GetName()} was drawn successfully.", print = self.verbose_mode)
+                        self.log.msg(f"The histogram {hist.GetName()} was drawn successfully.")
                     except Exception as e:
-                        err_msg(f"The histogram {hist.GetName()} was not drawn due to the Error: {e}.")
+                        self.log.err_msg(f"The histogram {hist.GetName()} was not drawn due to the Error: {e}.")
         else:
             if self.single_histograms != []:
                 for idx, hist in enumerate(self.single_histograms):
@@ -563,25 +613,25 @@ class PlottingAssistant:
                         x_div(hist)
 
                         req1 = "hist" 
-                        req2 = "hist" + "same"
+                        req2 = "hist" + " same"
                         hist.Draw(req1 if idx == 0 else req2)
-                        msg(f"The histogram {hist.GetName()} was drawn successfully.", print = self.verbose_mode)
+                        self.log.msg(f"The histogram {hist.GetName()} was drawn successfully.")
                     except Exception as e:
-                        err_msg(f"The histogram {hist.GetName()} was not drawn due to the Error: {e}.")
+                        self.log.err_msg(f"The histogram {hist.GetName()} was not drawn due to the Error: {e}.")
 
         if self.num_of_legends_bkg != 0:
             try:
                 self.legend_bkg.Draw("same")
-                msg(f"The backgrounds legend box was drawn successfully.", print = self.verbose_mode)
+                self.log.msg(f"The backgrounds legend box was drawn successfully.")
             except Exception as e:
-                err_msg(f"The legend box was not drawn due to the Error: {e}.")
+                self.log.err_msg(f"The legend box was not drawn due to the Error: {e}.")
         
         if self.num_of_legends_sig != 0:
             try:
                 self.legend_sig.Draw("same")
-                msg(f"The signal legend box was drawn successfully.", print = self.verbose_mode)
+                self.log.msg(f"The signal legend box was drawn successfully.")
             except Exception as e:
-                err_msg(f"The legend box was not drawn due to the Error: {e}.")
+                self.log.err_msg(f"The legend box was not drawn due to the Error: {e}.")
 
         if self.labels != []:
             for idx, label in enumerate(self.labels, start = 1):
@@ -592,22 +642,23 @@ class PlottingAssistant:
                         label["y1"],
                         label["label"]
                     )
-                    msg(f"LaTex label {idx}: '{label["label"]}' was added successfully.", print = self.verbose_mode)
+                    lab = label["label"]
+                    self.log.msg(f"LaTex label {idx}: '{lab}' was added successfully.")
                 except Exception as e:
-                    err_msg(f"Could not add the LaTex label '{label["label"]}'' due to the error: {e}.")
+                    self.log.err_msg(f"Could not add the LaTex label '{label["label"]}'' due to the error: {e}.")
 
         # Saving the plot in required formats
         try:
             has_format = bool(os.path.splitext(plot_name)[1])
             if has_format:
                 self.canvas.SaveAs(plot_name)
-                msg("Plot was saved in one format.", print = self.verbose_mode)
+                self.log.msg("Plot was saved in one format.")
             else:
                 for format in self.save_formats :
                     self.canvas.SaveAs(f"{plot_name}.{format}")
-                msg(f"Plot was saved in {len(self.save_formats)} format.", print = self.verbose_mode)
+                self.log.msg(f"Plot was saved in {len(self.save_formats)} format.")
         except Exception as e:
-            err_msg(f"Could not save the plot. Returning the error: {e}")
+            self.log.err_msg(f"Could not save the plot. Returning the error: {e}")
 
     def set_logy(self, enable: bool) -> None:
 
@@ -616,53 +667,52 @@ class PlottingAssistant:
         if enable == True:
             try:
                 self.canvas.SetLogy(enable)
-                msg("Log canvas enables", print = self.verbose_mode)
+                self.log.msg("Log canvas enables")
             except Exception as e:
-                err_msg(f"Could not log the canvas due to the error: {e}")
+                self.log.err_msg(f"Could not log the canvas due to the error: {e}")
 
     def clean_memory(self) -> None:
 
-        proc_title("Cleaning Memory", print = self.verbose_mode)
+        self.log.proc_title("Cleaning Memory")
 
         if self.histograms != []:
             for hist in self.histograms[:]:
                 try:
                     name = hist.GetName()
-                    hist.Delete()
-                    msg(f"The histogram '{name}' is deleted.", print = self.verbose_mode)
+                    # hist.Delete()
+                    self.log.msg(f"The histogram '{name}' is deleted.")
                 except Exception as e:
-                    err_msg(f"The histogram '{name}' was not deleted successfully due to the Error: {e}.")
-            self.histograms = []
+                    self.log.err_msg(f"The histogram '{name}' was not deleted successfully due to the Error: {e}.")
         
         try:
-            self.stack.Delete()
-            msg("The stacked histogram created by this class was deleted.", print = self.verbose_mode)
+            # self.stack.Delete()
+            self.log.msg("The stacked histogram created by this class was deleted.")
         except Exception as e:
-            err_msg(f"The stacked histogram created by this class was not deleted successfully due to the error {e}.")
+            self.log.err_msg(f"The stacked histogram created by this class was not deleted successfully due to the error {e}.")
 
         try:
-            self.legend_bkg.Delete()
-            msg("The lbackgroundegend created by this class was deleted.", print = self.verbose_mode)
+            # self.legend_bkg.Delete()
+            self.log.msg("The lbackgroundegend created by this class was deleted.")
         except Exception as e:
-            err_msg(f"The background legend created by this class was not deleted successfully due to the error {e}.")
+            self.log.err_msg(f"The background legend created by this class was not deleted successfully due to the error {e}.")
         
         try:
-            self.legend_sig.Delete()
-            msg("The signal legend created by this class was deleted.", print = self.verbose_mode)
+            # self.legend_sig.Delete()
+            self.log.msg("The signal legend created by this class was deleted.")
         except Exception as e:
-            err_msg(f"The signal legend created by this class was not deleted successfully due to the error {e}.")
+            self.log.err_msg(f"The signal legend created by this class was not deleted successfully due to the error {e}.")
 
         try:
             self.canvas.Close()
-            msg("The canvas created by this class was closed.", print = self.verbose_mode)
+            self.log.msg("The canvas created by this class was closed.")
         except Exception as e:
-            err_msg(f"The canvas created by this class was not closed successfully due to the error {e}.")
+            self.log.err_msg(f"The canvas created by this class was not closed successfully due to the error {e}.")
         
         # try:
         #     self.label.Delete()
-        #     msg("All the labels are deleted", print = self.verbose_mode)
+        #     self.log.msg("All the labels are deleted")
         # except Exception as e:
-        #     err_msg(f"Could not delete the labels due to the error {e}.")
+        #     self.log.err_msg(f"Could not delete the labels due to the error {e}.")
             
         # cross check
         gc.collect()
